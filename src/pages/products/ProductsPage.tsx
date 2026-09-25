@@ -17,7 +17,8 @@ import { formatCurrency } from "@/utils/format";
 const PAGE_SIZE = 8;
 
 export default function ProductsPage() {
-  const { products, categories, toggleProductStatus, loading, error, refreshAll } = useData();
+  const { products, categories, toggleProductStatus, deleteProduct, loading, error, refreshAll } =
+    useData();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -25,6 +26,7 @@ export default function ProductsPage() {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [deactivateId, setDeactivateId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     return products.filter((product) => {
@@ -184,11 +186,18 @@ export default function ProductsPage() {
                             Edit
                           </Button>
                           <Button
-                            variant="danger"
+                            variant="ghost"
                             size="sm"
                             onClick={() => setDeactivateId(product.id)}
                           >
                             {product.status === "inactive" ? "Activate" : "Deactivate"}
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => setDeleteId(product.id)}
+                          >
+                            Delete
                           </Button>
                         </div>
                       </td>
@@ -223,6 +232,27 @@ export default function ProductsPage() {
               toast(err?.message || "Failed to update product", "error");
             } finally {
               setDeactivateId(null);
+            }
+          })();
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteId)}
+        title="Delete product"
+        message="This permanently removes the product from the database. It will no longer appear in admin or on the storefront."
+        confirmLabel="Delete"
+        onCancel={() => setDeleteId(null)}
+        onConfirm={() => {
+          void (async () => {
+            if (!deleteId) return;
+            try {
+              await deleteProduct(deleteId);
+              toast("Product deleted", "success");
+            } catch (err: any) {
+              toast(err?.message || "Failed to delete product", "error");
+            } finally {
+              setDeleteId(null);
             }
           })();
         }}

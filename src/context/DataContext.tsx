@@ -330,10 +330,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [products]);
 
   const deleteProduct = useCallback(async (id: string) => {
-    const res = await apiDelete<{ success: true; data: any }>(`/products/${id}`);
-    const updated = normalizeProduct(res.data);
-    setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
-  }, []);
+    await apiDelete<{ success: true; data: { id: string; deleted?: boolean } }>(
+      `/products/${id}`,
+    );
+    await refreshProducts();
+  }, [refreshProducts]);
 
   const toggleProductStatus = useCallback(async (id: string) => {
     const product = products.find((p) => p.id === id);
@@ -344,12 +345,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         : product.status === "inactive"
           ? "active"
           : product.status;
-    if (next === "inactive") {
-      await deleteProduct(id);
-      return;
-    }
     await updateProduct(id, { status: next });
-  }, [products, deleteProduct, updateProduct]);
+  }, [products, updateProduct]);
 
   const addCategory = useCallback(async (category: any) => {
     const res = await apiPost<{ success: true; data: Category }>("/categories", {
@@ -369,9 +366,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteCategory = useCallback(async (id: string) => {
-    await apiDelete<{ success: true; data: { id: string; deleted?: boolean } }>(`/categories/${id}`);
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+    await apiDelete<{ success: true; data: { id: string; deleted?: boolean } }>(
+      `/categories/${id}`,
+    );
+    await refreshCategories();
+  }, [refreshCategories]);
 
   const toggleCategoryStatus = useCallback(async (id: string) => {
     const category = categories.find((c) => c.id === id);

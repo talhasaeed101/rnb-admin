@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useData } from "@/context/DataContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -21,9 +21,11 @@ function getVideoUrl(
 
 export default function ProductDetailPage() {
   const { id } = useParams();
-  const { products, toggleProductStatus, loading } = useData();
+  const navigate = useNavigate();
+  const { products, toggleProductStatus, deleteProduct, loading } = useData();
   const { toast } = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const product = products.find((item) => item.id === id);
 
   if (loading && !product) {
@@ -53,8 +55,11 @@ export default function ProductDetailPage() {
             <Button to={`/products/${product.id}/edit`} variant="secondary">
               Edit Product
             </Button>
-            <Button variant="danger" onClick={() => setConfirm(true)}>
+            <Button variant="ghost" onClick={() => setConfirm(true)}>
               {product.status === "inactive" ? "Activate" : "Deactivate"} Product
+            </Button>
+            <Button variant="danger" onClick={() => setDeleteConfirm(true)}>
+              Delete Product
             </Button>
           </>
         }
@@ -141,6 +146,27 @@ export default function ProductDetailPage() {
               toast(err?.message || "Failed to update product", "error");
             } finally {
               setConfirm(false);
+            }
+          })();
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteConfirm}
+        title="Delete product"
+        message="This permanently removes the product from the database. It will no longer appear in admin or on the storefront."
+        confirmLabel="Delete"
+        onCancel={() => setDeleteConfirm(false)}
+        onConfirm={() => {
+          void (async () => {
+            try {
+              await deleteProduct(product.id);
+              toast("Product deleted", "success");
+              navigate("/products");
+            } catch (err: any) {
+              toast(err?.message || "Failed to delete product", "error");
+            } finally {
+              setDeleteConfirm(false);
             }
           })();
         }}
