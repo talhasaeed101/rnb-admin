@@ -356,7 +356,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       name: category.name,
       slug: category.slug,
       description: category.description,
-      image: category.image,
       status: category.status,
     });
     setCategories((prev) => [res.data, ...prev]);
@@ -370,8 +369,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteCategory = useCallback(async (id: string) => {
-    const res = await apiDelete<{ success: true; data: Category }>(`/categories/${id}`);
-    setCategories((prev) => prev.map((c) => (c.id === id ? res.data : c)));
+    await apiDelete<{ success: true; data: { id: string; deleted?: boolean } }>(`/categories/${id}`);
+    setCategories((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
   const toggleCategoryStatus = useCallback(async (id: string) => {

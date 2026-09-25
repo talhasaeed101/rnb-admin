@@ -17,9 +17,6 @@ import {
 import { formatDate, slugify } from "@/utils/format";
 import type { Category } from "@/types";
 
-const DEMO_IMAGE =
-  "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=200&h=200&fit=crop";
-
 export default function CategoriesPage() {
   const { categories, addCategory, updateCategory, deleteCategory, toggleCategoryStatus, loading, error, refreshAll } =
     useData();
@@ -32,7 +29,6 @@ export default function CategoriesPage() {
     name: "",
     slug: "",
     description: "",
-    image: DEMO_IMAGE,
     status: "active",
   });
 
@@ -50,7 +46,6 @@ export default function CategoriesPage() {
       name: "",
       slug: "",
       description: "",
-      image: DEMO_IMAGE,
       status: "active",
     });
     setDrawerOpen(true);
@@ -62,7 +57,6 @@ export default function CategoriesPage() {
       name: category.name,
       slug: category.slug,
       description: category.description,
-      image: category.image,
       status: category.status,
     });
     setDrawerOpen(true);
@@ -79,7 +73,6 @@ export default function CategoriesPage() {
           name: form.name,
           slug: form.slug || slugify(form.name),
           description: form.description,
-          image: form.image,
           status: form.status as Category["status"],
         });
         toast("Category updated successfully", "success");
@@ -88,7 +81,7 @@ export default function CategoriesPage() {
           name: form.name,
           slug: form.slug || slugify(form.name),
           description: form.description,
-          image: form.image || DEMO_IMAGE,
+          image: "",
           status: form.status as Category["status"],
         });
         toast("Category created successfully", "success");
@@ -145,12 +138,9 @@ export default function CategoriesPage() {
                 {filtered.map((category) => (
                   <tr key={category.id}>
                     <td>
-                      <div className="product-cell">
-                        <img src={category.image} alt="" />
-                        <div>
-                          <strong>{category.name}</strong>
-                          <span>{category.slug}</span>
-                        </div>
+                      <div>
+                        <strong>{category.name}</strong>
+                        <div style={{ color: "var(--rnb-muted)", fontSize: 12 }}>{category.slug}</div>
                       </div>
                     </td>
                     <td>{category.productCount}</td>
@@ -228,11 +218,6 @@ export default function CategoriesPage() {
             onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
             rows={4}
           />
-          <Input
-            label="Image URL"
-            value={form.image}
-            onChange={(e) => setForm((prev) => ({ ...prev, image: e.target.value }))}
-          />
           <Select
             label="Status"
             value={form.status}
@@ -248,7 +233,7 @@ export default function CategoriesPage() {
       <ConfirmDialog
         open={Boolean(deleteId)}
         title="Delete category"
-        message="This will deactivate the category in the catalog."
+        message="This will permanently delete the category from the database. It will no longer appear in admin or on the storefront."
         confirmLabel="Delete"
         danger
         onCancel={() => setDeleteId(null)}
@@ -257,7 +242,7 @@ export default function CategoriesPage() {
             if (!deleteId) return;
             try {
               await deleteCategory(deleteId);
-              toast("Category deactivated successfully", "success");
+              toast("Category deleted", "success");
             } catch (err: any) {
               toast(err?.message || "Failed to delete category", "error");
             } finally {
