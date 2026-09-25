@@ -48,10 +48,11 @@ interface DataContextValue {
   updateProduct: (id: string, patch: Partial<Product>) => Promise<Product>;
   deleteProduct: (id: string) => Promise<void>;
   toggleProductStatus: (id: string) => Promise<void>;
-  addCategory: (category: Omit<Category, "id" | "productCount" | "createdAt"> | Category) => Promise<Category>;
-  updateCategory: (id: string, patch: Partial<Category>) => Promise<Category>;
+  addCategory: (category: Partial<Category> & { name: string; children?: string[] }) => Promise<Category>;
+  updateCategory: (id: string, patch: Partial<Category> & { children?: string[]; createChildren?: boolean }) => Promise<Category>;
   deleteCategory: (id: string) => Promise<void>;
   toggleCategoryStatus: (id: string) => Promise<void>;
+  syncCategoryCatalog: () => Promise<void>;
   updateOrder: (id: string, patch: Partial<Order>) => Promise<Order>;
   updateOrderStatus: (
     id: string,
@@ -66,6 +67,24 @@ interface DataContextValue {
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
+
+function normalizeCategory(raw: any): Category {
+  return {
+    id: raw.id,
+    name: raw.name,
+    slug: raw.slug,
+    description: raw.description || "",
+    image: raw.image || "",
+    status: raw.status,
+    parentId: raw.parentId ?? null,
+    parentName: raw.parentName ?? null,
+    sortOrder: raw.sortOrder ?? 0,
+    childCount: raw.childCount ?? 0,
+    childNames: raw.childNames || [],
+    productCount: raw.productCount ?? 0,
+    createdAt: raw.createdAt,
+  };
+}
 
 function normalizeProduct(raw: any): Product {
   return {
@@ -230,7 +249,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshCategories = useCallback(async () => {
     const res = await apiGet<{ success: true; data: Category[] }>("/categories");
-    setCategories(res.data);
+    setCategories(res.data.map(normalizeCategory));
   }, []);
 
   const refreshOrders = useCallback(async () => {
@@ -351,19 +370,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addCategory = useCallback(async (category: any) => {
     const res = await apiPost<{ success: true; data: Category }>("/categories", {
       name: category.name,
-      slug: category.slug,
-      description: category.description,
-      status: category.status,
+      parentId: category.parentId || null,
+      image: category.image || "",
+      children: category.children,
+      createChildren: true,
     });
-    setCategories((prev) => [res.data, ...prev]);
-    return res.data;
-  }, []);
+    await refreshCategories();
+    return normalizeCategory(res.data);
+  }, [refreshCategories]);
 
-  const updateCategory = useCallback(async (id: string, patch: Partial<Category>) => {
+  const updateCategory = useCallback(async (id: string, patch: Partial<Category> & { children?: string[]; createChildren?: boolean }) => {
     const res = await apiPut<{ success: true; data: Category }>(`/categories/${id}`, patch);
-    setCategories((prev) => prev.map((c) => (c.id === id ? res.data : c)));
-    return res.data;
-  }, []);
+    await refreshCategories();
+    return normalizeCategory(res.data);
+  }, [refreshCategories]);
 
   const deleteCategory = useCallback(async (id: string) => {
     await apiDelete<{ success: true; data: { id: string; deleted?: boolean } }>(
@@ -379,6 +399,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       status: category.status === "active" ? "inactive" : "active",
     });
   }, [categories, updateCategory]);
+
+  const syncCategoryCatalog = useCallback(async () => {
+    await apiPost("/categories/catalog-sync", {});
+    await refreshCategories();
+  }, [refreshCategories]);
 
   const updateOrder = useCallback(async (id: string, patch: Partial<Order>) => {
     const res = await apiPut<{ success: true; data: any }>(`/orders/${id}`, patch);
@@ -511,6 +536,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateCategory,
       deleteCategory,
       toggleCategoryStatus,
+      syncCategoryCatalog,
       updateOrder,
       updateOrderStatus,
       addPromoCode,
@@ -541,6 +567,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateCategory,
       deleteCategory,
       toggleCategoryStatus,
+      syncCategoryCatalog,
       updateOrder,
       updateOrderStatus,
       addPromoCode,

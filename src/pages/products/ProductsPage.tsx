@@ -74,7 +74,10 @@ export default function ProductsPage() {
           }}
           options={[
             { value: "", label: "All categories" },
-            ...categories.map((c) => ({ value: c.name, label: c.name })),
+            ...categories.map((c) => ({
+              value: c.name,
+              label: c.parentName ? `${c.parentName} / ${c.name}` : c.name,
+            })),
           ]}
         />
         <Select

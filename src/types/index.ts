@@ -65,6 +65,11 @@ export interface Category {
   description: string;
   image: string;
   status: CategoryStatus;
+  parentId: string | null;
+  parentName: string | null;
+  sortOrder: number;
+  childCount: number;
+  childNames?: string[];
   productCount: number;
   createdAt: string;
 }

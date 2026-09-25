@@ -90,7 +90,32 @@ export function ProductForm({
   const categoryOptions = useMemo(() => {
     const active = categories.filter((c) => c.status === "active");
     const list = active.length ? active : categories;
-    return list.map((c) => ({ value: c.name, label: c.name }));
+    const byParent = new Map<string | null, typeof list>();
+    for (const item of list) {
+      const key = item.parentId;
+      const group = byParent.get(key) || [];
+      group.push(item);
+      byParent.set(key, group);
+    }
+    const parents = (byParent.get(null) || []).sort((a, b) => a.name.localeCompare(b.name));
+    const options: { value: string; label: string }[] = [];
+    for (const parent of parents) {
+      options.push({ value: parent.name, label: parent.name });
+      const children = (byParent.get(parent.id) || []).sort((a, b) => a.sortOrder - b.sortOrder);
+      for (const child of children) {
+        options.push({ value: child.name, label: `${parent.name} / ${child.name}` });
+      }
+    }
+    const listed = new Set(options.map((o) => o.value));
+    for (const item of list) {
+      if (!listed.has(item.name)) {
+        options.push({
+          value: item.name,
+          label: item.parentName ? `${item.parentName} / ${item.name}` : item.name,
+        });
+      }
+    }
+    return options;
   }, [categories]);
 
   useEffect(() => {
