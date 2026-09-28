@@ -112,13 +112,61 @@ export function apiDelete<T>(path: string, body?: unknown) {
   return apiRequest<T>(path, { method: "DELETE", body });
 }
 
+const IMAGE_UPLOAD_BATCH = 24;
+
+export type UploadedImage = {
+  url: string;
+  publicId?: string;
+  width?: number | null;
+  height?: number | null;
+  format?: string;
+  bytes?: number;
+  originalName?: string;
+  mimeType?: string;
+  alt?: string;
+  isMain?: boolean;
+  sortOrder?: number;
+};
+
+function uploadedImageList(payload: any): UploadedImage[] {
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.images)) return payload.images;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  if (Array.isArray(payload?.data?.images)) return payload.data.images;
+  return [];
+}
+
 export async function uploadImages(files: File[]) {
-  const formData = new FormData();
-  files.forEach((file) => formData.append("images", file));
-  return apiRequest<{ success: true; data: any[] }>("/uploads/images", {
-    method: "POST",
-    formData,
-  });
+  const selected = files.filter((file) => file && file.size > 0);
+  if (!selected.length) {
+    const error: ApiError = {
+      message: "No images selected",
+      status: 400,
+      errors: [],
+    };
+    throw error;
+  }
+
+  const data: UploadedImage[] = [];
+  for (let i = 0; i < selected.length; i += IMAGE_UPLOAD_BATCH) {
+    const chunk = selected.slice(i, i + IMAGE_UPLOAD_BATCH);
+    const formData = new FormData();
+    chunk.forEach((file) => {
+      formData.append("images", file);
+    });
+    const res = await apiRequest<{
+      success: true;
+      data: UploadedImage[];
+      images?: UploadedImage[];
+      count?: number;
+    }>("/uploads/images", {
+      method: "POST",
+      formData,
+    });
+    data.push(...uploadedImageList(res));
+  }
+
+  return { success: true as const, data, count: data.length, images: data };
 }
 
 export async function uploadVideo(file: File) {

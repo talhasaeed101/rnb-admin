@@ -141,39 +141,47 @@ export function ProductForm({
 
   async function handleImageFiles(files: FileList | null) {
     if (!files?.length) return;
+    const selected = Array.from(files);
     setUploadingImages(true);
     try {
-      const res = await uploadImages(Array.from(files));
+      const res = await uploadImages(selected);
       const uploaded: ProductImage[] = (res.data || []).map((img: any, index: number) => ({
         id: img.publicId || `img-${Date.now()}-${index}`,
         url: img.url,
-        alt: values.name || "Product image",
-        isMain: values.images.length === 0 && index === 0,
-        sortOrder: values.images.length + index,
+        alt: img.alt || values.name || "Product image",
+        isMain: false,
+        sortOrder: index,
         publicId: img.publicId,
         width: img.width,
         height: img.height,
         format: img.format,
         bytes: img.bytes,
       }));
-      const next = [...values.images, ...uploaded].map((img, sortOrder) => ({
-        ...img,
-        sortOrder,
-        isMain: sortOrder === 0 ? true : img.isMain && sortOrder !== 0 ? false : img.isMain,
-      }));
-      if (next.length && !next.some((img) => img.isMain)) {
-        next[0] = { ...next[0], isMain: true };
+      if (!uploaded.length) {
+        throw new Error("Upload did not return any images");
       }
-      // Ensure first image stays main if we had empty gallery
-      if (values.images.length === 0 && next.length) {
-        patch(
-          "images",
-          next.map((img, i) => ({ ...img, isMain: i === 0, sortOrder: i })),
-        );
-      } else {
-        patch("images", next);
-      }
-      toast("Image uploaded successfully", "success");
+      setValues((prev) => {
+        const start = prev.images.length;
+        const incoming = uploaded.map((img, index) => ({
+          ...img,
+          isMain: start === 0 && index === 0,
+          sortOrder: start + index,
+        }));
+        const next = [...prev.images, ...incoming].map((img, sortOrder) => ({
+          ...img,
+          sortOrder,
+        }));
+        if (next.length && !next.some((img) => img.isMain)) {
+          next[0] = { ...next[0], isMain: true };
+        }
+        return { ...prev, images: next };
+      });
+      toast(
+        uploaded.length === 1
+          ? "Image uploaded successfully"
+          : `${uploaded.length} images uploaded successfully`,
+        "success",
+      );
     } catch (error: any) {
       toast(error?.message || "Image upload failed", "error");
     } finally {
@@ -438,7 +446,7 @@ export function ProductForm({
           <div className="section-card">
             <h3>5. Product Media</h3>
             <p style={{ fontSize: 13, color: "var(--rnb-muted)", marginBottom: 12 }}>
-              Upload images/videos via the API (Cloudinary). First image is the main product image.
+              Select multiple image files at once. First image is the main product image.
             </p>
             <div className="media-grid">
               {values.images.map((img) => (
@@ -472,7 +480,9 @@ export function ProductForm({
                 disabled={uploadingImages}
               >
                 <Upload size={18} />
-                <span style={{ fontSize: 11 }}>{uploadingImages ? "Uploading..." : "Upload"}</span>
+                <span style={{ fontSize: 11 }}>
+                  {uploadingImages ? "Uploading..." : "Upload images"}
+                </span>
               </button>
             </div>
             <input
