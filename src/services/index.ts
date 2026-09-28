@@ -6,6 +6,7 @@ export {
   apiPatch,
   apiDelete,
   uploadImages,
+  deleteImage,
   uploadVideo,
   getToken,
   setToken,

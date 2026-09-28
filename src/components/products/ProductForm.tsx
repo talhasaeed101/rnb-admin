@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Plus, Trash2, Star, Upload } from "lucide-react";
+import { Plus, Star, Trash2, Upload, X } from "lucide-react";
 import type { Product, ProductImage, ProductVariation, ProductStatus } from "@/types";
 import { COLLECTIONS, PRODUCT_BADGES } from "@/data/products";
 import { useData } from "@/context/DataContext";
 import { useToast } from "@/context/ToastContext";
-import { uploadImages, uploadVideo } from "@/services/api";
+import { deleteImage, uploadImages, uploadVideo } from "@/services/api";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { slugify } from "@/utils/format";
 
@@ -141,7 +141,15 @@ export function ProductForm({
 
   async function handleImageFiles(files: FileList | null) {
     if (!files?.length) return;
-    const selected = Array.from(files);
+    const selected = Array.from(files).filter(
+      (file) =>
+        file.type.startsWith("image/") ||
+        /\.(jpe?g|png|webp|gif)$/i.test(file.name),
+    );
+    if (!selected.length) {
+      toast("Please choose image files (JPEG, PNG, WebP, or GIF)", "error");
+      return;
+    }
     setUploadingImages(true);
     try {
       const res = await uploadImages(selected);
@@ -176,12 +184,20 @@ export function ProductForm({
         }
         return { ...prev, images: next };
       });
-      toast(
-        uploaded.length === 1
-          ? "Image uploaded successfully"
-          : `${uploaded.length} images uploaded successfully`,
-        "success",
-      );
+      const failedCount = res.failed?.length || 0;
+      if (failedCount) {
+        toast(
+          `${uploaded.length} uploaded, ${failedCount} failed`,
+          "error",
+        );
+      } else {
+        toast(
+          uploaded.length === 1
+            ? "Image uploaded successfully"
+            : `${uploaded.length} images uploaded successfully`,
+          "success",
+        );
+      }
     } catch (error: any) {
       toast(error?.message || "Image upload failed", "error");
     } finally {
@@ -215,6 +231,8 @@ export function ProductForm({
   }
 
   function removeImage(id: string) {
+    const current = values.images.find((img) => img.id === id);
+    const publicId = current?.publicId;
     const next = values.images.filter((img) => img.id !== id);
     if (next.length && !next.some((img) => img.isMain)) {
       next[0] = { ...next[0], isMain: true };
@@ -223,6 +241,11 @@ export function ProductForm({
       "images",
       next.map((img, index) => ({ ...img, sortOrder: index })),
     );
+    if (publicId) {
+      void deleteImage(publicId).catch(() => {
+        toast("Image removed from product. Storage cleanup failed.", "error");
+      });
+    }
   }
 
   function setMain(id: string) {
@@ -446,12 +469,33 @@ export function ProductForm({
           <div className="section-card">
             <h3>5. Product Media</h3>
             <p style={{ fontSize: 13, color: "var(--rnb-muted)", marginBottom: 12 }}>
-              Select multiple image files at once. First image is the main product image.
+              Click Upload or drop several images here. You can select multiple files at once.
+              Use the X to discard an image.
             </p>
-            <div className="media-grid">
+            <div
+              className="media-grid"
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void handleImageFiles(event.dataTransfer.files);
+              }}
+            >
               {values.images.map((img) => (
                 <div key={img.id} className="media-item">
                   <img src={img.url} alt={img.alt} />
+                  <button
+                    type="button"
+                    className="media-item__remove"
+                    aria-label="Remove image"
+                    title="Remove image"
+                    onClick={() => removeImage(img.id)}
+                  >
+                    <X size={14} />
+                  </button>
                   <div className="media-item__actions">
                     <button type="button" className="btn btn--sm btn--secondary" onClick={() => setMain(img.id)}>
                       <Star size={12} />
@@ -461,9 +505,6 @@ export function ProductForm({
                     </button>
                     <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveImage(img.id, 1)}>
                       →
-                    </button>
-                    <button type="button" className="btn btn--sm btn--danger" onClick={() => removeImage(img.id)}>
-                      <Trash2 size={12} />
                     </button>
                   </div>
                   {img.isMain ? (
@@ -488,7 +529,7 @@ export function ProductForm({
             <input
               ref={imageInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
               multiple
               hidden
               onChange={(e) => void handleImageFiles(e.target.files)}
@@ -654,13 +695,30 @@ export function ProductForm({
           <div className="section-card" style={{ position: "sticky", top: 88 }}>
             <h3>8. Product Preview</h3>
             <div className="preview-card">
-              {mainImage ? (
-                <img src={mainImage} alt="" />
-              ) : (
-                <div style={{ aspectRatio: 1, background: "var(--rnb-secondary)", display: "grid", placeItems: "center", color: "var(--rnb-muted)" }}>
-                  No image
-                </div>
-              )}
+              <div className="preview-card__media">
+                {mainImage ? (
+                  <>
+                    <img src={mainImage} alt="" />
+                    <button
+                      type="button"
+                      className="media-item__remove"
+                      aria-label="Remove preview image"
+                      title="Remove image"
+                      onClick={() => {
+                        const main =
+                          values.images.find((img) => img.isMain) || values.images[0];
+                        if (main) removeImage(main.id);
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div style={{ aspectRatio: 1, background: "var(--rnb-secondary)", display: "grid", placeItems: "center", color: "var(--rnb-muted)" }}>
+                    No image
+                  </div>
+                )}
+              </div>
               <div className="preview-card__body">
                 {values.badge ? (
                   <span className="badge badge--sky" style={{ marginBottom: 8 }}>
