@@ -137,7 +137,10 @@ function uploadedImageList(payload: any): UploadedImage[] {
   return [];
 }
 
-export async function uploadImages(files: File[]) {
+export async function uploadImages(
+  files: File[],
+  onProgress?: (done: number, total: number) => void,
+) {
   const selected = files.filter((file) => file && file.size > 0);
   if (!selected.length) {
     const error: ApiError = {
@@ -150,6 +153,8 @@ export async function uploadImages(files: File[]) {
 
   const data: UploadedImage[] = [];
   const failed: string[] = [];
+  let done = 0;
+  onProgress?.(0, selected.length);
 
   for (const file of selected) {
     try {
@@ -167,12 +172,14 @@ export async function uploadImages(files: File[]) {
       const items = uploadedImageList(res);
       if (!items.length) {
         failed.push(file.name);
-        continue;
+      } else {
+        data.push(...items);
       }
-      data.push(...items);
     } catch {
       failed.push(file.name);
     }
+    done += 1;
+    onProgress?.(done, selected.length);
   }
 
   if (!data.length) {

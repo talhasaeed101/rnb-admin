@@ -52,7 +52,6 @@ export function ProductForm({
 }) {
   const { categories } = useData();
   const { toast } = useToast();
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const [values, setValues] = useState<ProductFormValues>(() =>
     initial
@@ -84,6 +83,7 @@ export function ProductForm({
   const [sizeInput, setSizeInput] = useState("");
   const [optionInput, setOptionInput] = useState<Record<string, string>>({});
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -139,7 +139,7 @@ export function ProductForm({
     }));
   }
 
-  async function handleImageFiles(files: FileList | null) {
+  async function handleImageFiles(files: File[] | FileList | null) {
     if (!files?.length) return;
     const selected = Array.from(files).filter(
       (file) =>
@@ -151,8 +151,11 @@ export function ProductForm({
       return;
     }
     setUploadingImages(true);
+    setUploadProgress(`Uploading 0/${selected.length}`);
     try {
-      const res = await uploadImages(selected);
+      const res = await uploadImages(selected, (done, total) => {
+        setUploadProgress(`Uploading ${done}/${total}`);
+      });
       const uploaded: ProductImage[] = (res.data || []).map((img: any, index: number) => ({
         id: img.publicId || `img-${Date.now()}-${index}`,
         url: img.url,
@@ -186,10 +189,7 @@ export function ProductForm({
       });
       const failedCount = res.failed?.length || 0;
       if (failedCount) {
-        toast(
-          `${uploaded.length} uploaded, ${failedCount} failed`,
-          "error",
-        );
+        toast(`${uploaded.length} uploaded, ${failedCount} failed`, "error");
       } else {
         toast(
           uploaded.length === 1
@@ -202,7 +202,7 @@ export function ProductForm({
       toast(error?.message || "Image upload failed", "error");
     } finally {
       setUploadingImages(false);
-      if (imageInputRef.current) imageInputRef.current.value = "";
+      setUploadProgress("");
     }
   }
 
@@ -481,7 +481,8 @@ export function ProductForm({
               onDrop={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void handleImageFiles(event.dataTransfer.files);
+                const dropped = Array.from(event.dataTransfer.files || []);
+                void handleImageFiles(dropped);
               }}
             >
               {values.images.map((img) => (
@@ -514,26 +515,27 @@ export function ProductForm({
                   ) : null}
                 </div>
               ))}
-              <button
-                type="button"
-                className="media-add"
-                onClick={() => imageInputRef.current?.click()}
-                disabled={uploadingImages}
-              >
+              <label className={uploadingImages ? "media-add media-add--disabled" : "media-add"}>
+                <input
+                  className="media-add__input"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  disabled={uploadingImages}
+                  onChange={(event) => {
+                    const picked = event.currentTarget.files
+                      ? Array.from(event.currentTarget.files)
+                      : [];
+                    event.currentTarget.value = "";
+                    void handleImageFiles(picked);
+                  }}
+                />
                 <Upload size={18} />
-                <span style={{ fontSize: 11 }}>
-                  {uploadingImages ? "Uploading..." : "Upload images"}
+                <span style={{ fontSize: 11, textAlign: "center", padding: "0 6px" }}>
+                  {uploadingImages ? uploadProgress || "Uploading..." : "Upload images"}
                 </span>
-              </button>
+              </label>
             </div>
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-              multiple
-              hidden
-              onChange={(e) => void handleImageFiles(e.target.files)}
-            />
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <Button
