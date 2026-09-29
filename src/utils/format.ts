@@ -1,11 +1,11 @@
 import type { StockLevel } from "@/types";
 
-export function formatCurrency(amount: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", {
+export function formatCurrency(amount: number, currency = "PKR"): string {
+  return new Intl.NumberFormat("en-PK", {
     style: "currency",
     currency,
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 

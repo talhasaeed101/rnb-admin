@@ -59,6 +59,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-02-02T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 86,
@@ -122,6 +123,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-03-03T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 64,
@@ -185,6 +187,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-04-04T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 112,
@@ -248,6 +251,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-05-05T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 48,
@@ -311,6 +315,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-06-06T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 91,
@@ -374,6 +379,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-07-07T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 33,
@@ -437,6 +443,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-08-08T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 57,
@@ -500,6 +507,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-01-09T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 41,
@@ -563,6 +571,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-02-10T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 29,
@@ -626,6 +635,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-03-11T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 78,
@@ -689,6 +699,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-04-12T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 36,
@@ -752,6 +763,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-05-13T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 54,
@@ -815,6 +827,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-06-14T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 95,
@@ -878,6 +891,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-07-15T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 62,
@@ -941,6 +955,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-08-16T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 22,
@@ -1004,6 +1019,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-01-17T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 18,
@@ -1067,6 +1083,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-02-18T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 0,
@@ -1130,6 +1147,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-03-19T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 44,
@@ -1193,6 +1211,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-04-20T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 12,
@@ -1256,6 +1275,7 @@ export const initialProducts: Product[] = [
       "Medium",
       "Large"
     ],
+    "colorVariants": [],
     "createdAt": "2026-05-21T10:00:00Z",
     "updatedAt": "2026-09-10T12:00:00Z",
     "ordersCount": 39,

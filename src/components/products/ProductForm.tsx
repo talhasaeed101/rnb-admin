@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Plus, Star, Trash2, Upload, X } from "lucide-react";
-import type { Product, ProductImage, ProductVariation, ProductStatus } from "@/types";
+import { Edit2, Palette, Plus, Star, Trash2, Upload, X } from "lucide-react";
+import type { ColorVariant, Product, ProductImage, ProductVariation, ProductStatus } from "@/types";
 import { COLLECTIONS, PRODUCT_BADGES } from "@/data/products";
 import { useData } from "@/context/DataContext";
 import { useToast } from "@/context/ToastContext";
 import { deleteImage, uploadImages, uploadVideo } from "@/services/api";
-import { Button, Input, Select, Textarea } from "@/components/ui";
-import { slugify } from "@/utils/format";
+import { Button, Input, Modal, Select, Textarea } from "@/components/ui";
+import { formatCurrency, slugify } from "@/utils/format";
 
 export type ProductFormValues = Omit<Product, "id" | "createdAt" | "updatedAt" | "ordersCount" | "revenue">;
 
@@ -30,8 +30,27 @@ function emptyValues(): ProductFormValues {
     status: "draft",
     variations: [],
     sizes: [],
+    colorVariants: [],
   };
 }
+
+interface ColorFormState {
+  id: string;
+  colorName: string;
+  colorCode: string;
+  images: ProductImage[];
+}
+
+function emptyColorForm(): ColorFormState {
+  return {
+    id: "",
+    colorName: "",
+    colorCode: "#3b82f6",
+    images: [],
+  };
+}
+
+const HEX_COLOR_REGEX = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
 
 function videoUrl(video: ProductFormValues["video"]): string {
   if (!video) return "";
@@ -53,6 +72,7 @@ export function ProductForm({
   const { categories } = useData();
   const { toast } = useToast();
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const colorImageInputRef = useRef<HTMLInputElement>(null);
   const [values, setValues] = useState<ProductFormValues>(() =>
     initial
       ? {
@@ -74,6 +94,7 @@ export function ProductForm({
           status: initial.status === "out_of_stock" ? "active" : initial.status,
           variations: initial.variations,
           sizes: initial.sizes,
+          colorVariants: initial.colorVariants || [],
         }
       : {
           ...emptyValues(),
@@ -86,6 +107,11 @@ export function ProductForm({
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [colorModalOpen, setColorModalOpen] = useState(false);
+  const [colorForm, setColorForm] = useState<ColorFormState>(emptyColorForm());
+  const [colorUploading, setColorUploading] = useState(false);
+  const [colorUploadProgress, setColorUploadProgress] = useState("");
+  const [colorFormErrors, setColorFormErrors] = useState<Record<string, string>>({});
 
   const categoryOptions = useMemo(() => {
     const active = categories.filter((c) => c.status === "active");
@@ -322,6 +348,235 @@ export function ProductForm({
     setSizeInput("");
   }
 
+  function openAddColorModal() {
+    setColorForm({ ...emptyColorForm(), id: `color-${Date.now()}` });
+    setColorFormErrors({});
+    setColorModalOpen(true);
+  }
+
+  function openEditColorModal(cv: ColorVariant) {
+    setColorForm({
+      id: cv.id,
+      colorName: cv.colorName,
+      colorCode: cv.colorCode,
+      images: [...cv.images],
+    });
+    setColorFormErrors({});
+    setColorModalOpen(true);
+  }
+
+  function closeColorModal() {
+    setColorModalOpen(false);
+    setColorForm(emptyColorForm());
+    setColorFormErrors({});
+  }
+
+  function patchColorForm<K extends keyof ColorFormState>(key: K, value: ColorFormState[K]) {
+    setColorForm((prev) => ({ ...prev, [key]: value }));
+    setColorFormErrors((prev) => ({ ...prev, [key]: "" }));
+  }
+
+  async function handleColorImageFiles(files: File[] | FileList | null) {
+    if (!files?.length) return;
+    const selected = Array.from(files).filter(
+      (file) =>
+        file.type.startsWith("image/") ||
+        /\.(jpe?g|png|webp|gif)$/i.test(file.name),
+    );
+    if (!selected.length) {
+      toast("Please choose image files (JPEG, PNG, WebP, or GIF)", "error");
+      return;
+    }
+    setColorUploading(true);
+    setColorUploadProgress(`Uploading 0/${selected.length}`);
+    try {
+      const res = await uploadImages(selected, (done, total) => {
+        setColorUploadProgress(`Uploading ${done}/${total}`);
+      });
+      const uploaded: ProductImage[] = (res.data || []).map((img: any, index: number) => ({
+        id: img.publicId || `cimg-${Date.now()}-${index}`,
+        url: img.url,
+        alt: img.alt || colorForm.colorName || "Color variant image",
+        isMain: false,
+        sortOrder: index,
+        publicId: img.publicId,
+        width: img.width,
+        height: img.height,
+        format: img.format,
+        bytes: img.bytes,
+      }));
+      if (!uploaded.length) {
+        throw new Error("Upload did not return any images");
+      }
+      setColorForm((prev) => {
+        const start = prev.images.length;
+        const incoming = uploaded.map((img, index) => ({
+          ...img,
+          isMain: start === 0 && index === 0,
+          sortOrder: start + index,
+        }));
+        const next = [...prev.images, ...incoming].map((img, sortOrder) => ({
+          ...img,
+          sortOrder,
+        }));
+        if (next.length && !next.some((img) => img.isMain)) {
+          next[0] = { ...next[0], isMain: true };
+        }
+        return { ...prev, images: next };
+      });
+      const failedCount = res.failed?.length || 0;
+      if (failedCount) {
+        toast(`${uploaded.length} uploaded, ${failedCount} failed`, "error");
+      } else {
+        toast(
+          uploaded.length === 1
+            ? "Image uploaded successfully"
+            : `${uploaded.length} images uploaded successfully`,
+          "success",
+        );
+      }
+    } catch (error: any) {
+      toast(error?.message || "Image upload failed", "error");
+    } finally {
+      setColorUploading(false);
+      setColorUploadProgress("");
+    }
+  }
+
+  function removeColorImage(id: string) {
+    const current = colorForm.images.find((img) => img.id === id);
+    const publicId = current?.publicId;
+    const next = colorForm.images.filter((img) => img.id !== id);
+    if (next.length && !next.some((img) => img.isMain)) {
+      next[0] = { ...next[0], isMain: true };
+    }
+    patchColorForm(
+      "images",
+      next.map((img, index) => ({ ...img, sortOrder: index })),
+    );
+    if (publicId) {
+      void deleteImage(publicId).catch(() => {
+        toast("Image removed from color. Storage cleanup failed.", "error");
+      });
+    }
+  }
+
+  function setColorMainImage(id: string) {
+    const index = colorForm.images.findIndex((img) => img.id === id);
+    if (index < 0) return;
+    const next = [...colorForm.images];
+    const [item] = next.splice(index, 1);
+    next.unshift(item);
+    patchColorForm(
+      "images",
+      next.map((img, sortOrder) => ({
+        ...img,
+        sortOrder,
+        isMain: sortOrder === 0,
+      })),
+    );
+  }
+
+  function moveColorImage(id: string, direction: -1 | 1) {
+    const index = colorForm.images.findIndex((img) => img.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= colorForm.images.length) return;
+    const next = [...colorForm.images];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    patchColorForm(
+      "images",
+      next.map((img, sortOrder) => ({
+        ...img,
+        sortOrder,
+        isMain: sortOrder === 0,
+      })),
+    );
+  }
+
+  function validateColorForm(): boolean {
+    const errors: Record<string, string> = {};
+    const name = colorForm.colorName.trim();
+    const code = colorForm.colorCode.trim();
+
+    if (!name) {
+      errors.colorName = "Color name is required";
+    } else if (name.length > 60) {
+      errors.colorName = "Color name must be 60 characters or less";
+    }
+
+    if (!code) {
+      errors.colorCode = "Color code is required";
+    } else if (!HEX_COLOR_REGEX.test(code)) {
+      errors.colorCode = "Invalid color code. Use #RRGGBB or #RGB format";
+    }
+
+    const duplicate = values.colorVariants.find(
+      (cv) => cv.colorName.toLowerCase() === name.toLowerCase() && cv.id !== colorForm.id,
+    );
+    if (duplicate) {
+      errors.colorName = "A color with this name already exists for this product";
+    }
+
+    if (colorForm.images.length === 0) {
+      errors.images = "At least one image is required for the color variation";
+    }
+
+    setColorFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
+  function saveColorVariant() {
+    if (!validateColorForm()) return;
+
+    const colorName = colorForm.colorName.trim();
+    const colorCode = colorForm.colorCode.trim().toUpperCase();
+    const sortOrder = values.colorVariants.length;
+
+    const existingIndex = values.colorVariants.findIndex((cv) => cv.id === colorForm.id);
+
+    if (existingIndex >= 0) {
+      const updated = [...values.colorVariants];
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        colorName,
+        colorCode,
+        images: colorForm.images,
+      };
+      patch("colorVariants", updated);
+      toast("Color updated successfully", "success");
+    } else {
+      const newVariant: ColorVariant = {
+        id: colorForm.id,
+        colorName,
+        colorCode,
+        sortOrder,
+        images: colorForm.images,
+      };
+      patch("colorVariants", [...values.colorVariants, newVariant]);
+      toast("Color added successfully", "success");
+    }
+
+    closeColorModal();
+  }
+
+  function removeColorVariant(id: string) {
+    const cv = values.colorVariants.find((c) => c.id === id);
+    if (!cv) return;
+    cv.images.forEach((img) => {
+      if (img.publicId) {
+        void deleteImage(img.publicId).catch(() => undefined);
+      }
+    });
+    patch(
+      "colorVariants",
+      values.colorVariants
+        .filter((c) => c.id !== id)
+        .map((c, i) => ({ ...c, sortOrder: i })),
+    );
+    toast("Color removed", "success");
+  }
+
   async function handleSubmit(event: FormEvent, mode: "draft" | "publish") {
     event.preventDefault();
     if (submitting) return;
@@ -333,6 +588,28 @@ export function ProductForm({
           : "Create a category first (Categories page), then add the product",
         "error",
       );
+      return;
+    }
+
+    for (const cv of values.colorVariants) {
+      if (!cv.colorName.trim()) {
+        toast(`Color variation has no name. Please edit or remove it.`, "error");
+        return;
+      }
+      if (!HEX_COLOR_REGEX.test(cv.colorCode)) {
+        toast(`Color "${cv.colorName}" has invalid color code. Please edit it.`, "error");
+        return;
+      }
+      if (cv.images.length === 0) {
+        toast(`Color "${cv.colorName}" needs at least one image.`, "error");
+        return;
+      }
+    }
+
+    const names = values.colorVariants.map((cv) => cv.colorName.toLowerCase().trim());
+    const unique = new Set(names);
+    if (names.length !== unique.size) {
+      toast("Duplicate color names found. Please make color names unique.", "error");
       return;
     }
 
@@ -468,10 +745,15 @@ export function ProductForm({
 
           <div className="section-card">
             <h3>5. Product Media</h3>
-            <p style={{ fontSize: 13, color: "var(--rnb-muted)", marginBottom: 12 }}>
-              Click Upload or drop several images here. You can select multiple files at once.
-              Use the X to discard an image.
-            </p>
+            <div style={{ fontSize: 13, color: "var(--rnb-muted)", marginBottom: 14, lineHeight: 1.6 }}>
+              <p>
+                <strong style={{ color: "var(--rnb-text)" }}>Recommended size:</strong> 2000 × 2000 pixels (square, 1:1 ratio)
+              </p>
+              <p style={{ marginTop: 4 }}>
+                Click <strong>Upload Images</strong> or drag &amp; drop. You can select multiple files at once (up to 24 images).
+                Use <Star size={11} style={{ display: "inline", verticalAlign: "middle" }} /> to set the main image, ← → to reorder, and × to remove.
+              </p>
+            </div>
             <div
               className="media-grid"
               onDragOver={(event) => {
@@ -487,7 +769,7 @@ export function ProductForm({
             >
               {values.images.map((img) => (
                 <div key={img.id} className="media-item">
-                  <img src={img.url} alt={img.alt} />
+                  <img src={img.url} alt={img.alt} loading="lazy" />
                   <button
                     type="button"
                     className="media-item__remove"
@@ -495,22 +777,44 @@ export function ProductForm({
                     title="Remove image"
                     onClick={() => removeImage(img.id)}
                   >
-                    <X size={14} />
+                    <X size={16} />
                   </button>
                   <div className="media-item__actions">
-                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => setMain(img.id)}>
-                      <Star size={12} />
+                    <button
+                      type="button"
+                      className="btn btn--sm btn--secondary"
+                      onClick={() => setMain(img.id)}
+                      title={img.isMain ? "Main image" : "Set as main"}
+                    >
+                      <Star size={13} fill={img.isMain ? "#005afa" : "none"} />
                     </button>
-                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveImage(img.id, -1)}>
+                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveImage(img.id, -1)} title="Move left">
                       ←
                     </button>
-                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveImage(img.id, 1)}>
+                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveImage(img.id, 1)} title="Move right">
                       →
                     </button>
                   </div>
                   {img.isMain ? (
-                    <span className="badge badge--blue" style={{ position: "absolute", top: 6, left: 6 }}>
+                    <span className="badge badge--blue" style={{ position: "absolute", top: 8, left: 8 }}>
                       Main
+                    </span>
+                  ) : null}
+                  {(img.width || img.height) ? (
+                    <span
+                      style={{
+                        position: "absolute",
+                        bottom: 50,
+                        left: 8,
+                        fontSize: 10,
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        background: "rgba(15,23,42,0.7)",
+                        color: "#fff",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {img.width || "?"}×{img.height || "?"}
                     </span>
                   ) : null}
                 </div>
@@ -519,7 +823,7 @@ export function ProductForm({
                 <input
                   className="media-add__input"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   multiple
                   disabled={uploadingImages}
                   onChange={(event) => {
@@ -530,14 +834,42 @@ export function ProductForm({
                     void handleImageFiles(picked);
                   }}
                 />
-                <Upload size={18} />
-                <span style={{ fontSize: 11, textAlign: "center", padding: "0 6px" }}>
-                  {uploadingImages ? uploadProgress || "Uploading..." : "Upload images"}
+                <Upload size={22} />
+                <span style={{ fontSize: 12, fontWeight: 600, textAlign: "center", padding: "0 10px" }}>
+                  {uploadingImages ? uploadProgress || "Uploading..." : "Upload Images"}
+                </span>
+                <span className="image-dimensions-hint">
+                  JPG, PNG, WebP, GIF<br />
+                  2000×2000 recommended
                 </span>
               </label>
             </div>
-            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {values.images.length > 0 && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  background: values.images.length >= 4 ? "var(--rnb-soft)" : "#fafbfc",
+                  border: "1px solid var(--rnb-border)",
+                  fontSize: 12,
+                  color: "var(--rnb-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
+              >
+                <span>
+                  <strong style={{ color: "var(--rnb-text)" }}>{values.images.length}</strong> image{values.images.length === 1 ? "" : "s"} added
+                  {values.images.some((i) => i.isMain) ? " · main image set" : ""}
+                </span>
+                <span>First image is shown on product listings</span>
+              </div>
+            )}
+            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Button
                   type="button"
                   variant="secondary"
@@ -666,6 +998,118 @@ export function ProductForm({
                 ))}
               </div>
             </div>
+
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 650 }}>
+                  <Palette size={15} style={{ display: "inline", verticalAlign: "middle", marginRight: 6 }} />
+                  Color Variants
+                </h4>
+                <Button type="button" variant="secondary" onClick={openAddColorModal}>
+                  <Plus size={14} /> Add Color
+                </Button>
+              </div>
+              {values.colorVariants.length === 0 ? (
+                <div
+                  style={{
+                    padding: "24px 16px",
+                    border: "2px dashed var(--rnb-border)",
+                    borderRadius: 10,
+                    textAlign: "center",
+                    color: "var(--rnb-muted)",
+                    fontSize: 13,
+                  }}
+                >
+                  No color variants yet. Click <strong style={{ color: "var(--rnb-text)" }}>Add Color</strong> to create a color variation with its own images.
+                </div>
+              ) : (
+                <div className="color-variant-list">
+                  {values.colorVariants.map((cv) => (
+                    <div key={cv.id} className="color-variant-card">
+                      <div className="color-variant-card__header">
+                        <div className="color-variant-card__title">
+                          <span
+                            className="color-swatch"
+                            style={{ background: cv.colorCode }}
+                            title={cv.colorCode}
+                          />
+                          <div>
+                            <strong>{cv.colorName}</strong>
+                            <span style={{ fontSize: 12, color: "var(--rnb-muted)", display: "block" }}>
+                              {cv.colorCode}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => openEditColorModal(cv)}
+                          >
+                            <Edit2 size={13} /> Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="danger"
+                            onClick={() => removeColorVariant(cv.id)}
+                          >
+                            <Trash2 size={13} /> Remove
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="color-variant-card__images">
+                        {cv.images.length > 0 ? (
+                          cv.images.slice(0, 5).map((img) => (
+                            <div key={img.id} className="color-variant-card__img">
+                              <img src={img.url} alt={img.alt} loading="lazy" />
+                              {img.isMain ? (
+                                <span className="badge badge--blue" style={{ position: "absolute", top: 4, left: 4, fontSize: 10, height: 20, padding: "0 7px" }}>
+                                  Main
+                                </span>
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div
+                            style={{
+                              gridColumn: "1 / -1",
+                              padding: "16px",
+                              textAlign: "center",
+                              fontSize: 12,
+                              color: "var(--rnb-muted)",
+                              background: "var(--rnb-secondary)",
+                              borderRadius: 8,
+                            }}
+                          >
+                            No images
+                          </div>
+                        )}
+                        {cv.images.length > 5 ? (
+                          <div
+                            className="color-variant-card__img"
+                            style={{
+                              background: "var(--rnb-secondary)",
+                              display: "grid",
+                              placeItems: "center",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: "var(--rnb-muted)",
+                            }}
+                          >
+                            +{cv.images.length - 5}
+                          </div>
+                        ) : null}
+                      </div>
+                      {cv.images.length > 0 && (
+                        <div style={{ fontSize: 12, color: "var(--rnb-muted)", marginTop: 8 }}>
+                          {cv.images.length} image{cv.images.length === 1 ? "" : "s"}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="section-card">
@@ -733,9 +1177,9 @@ export function ProductForm({
                 </p>
                 <div className="price">
                   <strong>
-                    ${((values.salePrice ?? values.price) || 0).toFixed(2)}
+                    {formatCurrency(values.salePrice ?? values.price ?? 0)}
                   </strong>
-                  {values.salePrice != null ? <s>${values.price.toFixed(2)}</s> : null}
+                  {values.salePrice != null ? <s>{formatCurrency(values.price)}</s> : null}
                 </div>
                 <p style={{ marginTop: 10, fontSize: 13, color: "var(--rnb-muted)", lineHeight: 1.5 }}>
                   {values.description || "Description preview appears here."}
@@ -762,6 +1206,176 @@ export function ProductForm({
           </div>
         </div>
       </div>
+
+      <Modal
+        open={colorModalOpen}
+        onClose={closeColorModal}
+        title={colorForm.colorName ? `Edit Color: ${colorForm.colorName}` : "Add Color Variation"}
+        footer={
+          <>
+            <Button type="button" variant="ghost" onClick={closeColorModal}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={saveColorVariant}
+              disabled={colorUploading}
+            >
+              {colorForm.colorName ? "Save Changes" : "Add Color"}
+            </Button>
+          </>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="form-grid">
+            <Input
+              label="Color Name"
+              value={colorForm.colorName}
+              onChange={(e) => patchColorForm("colorName", e.target.value)}
+              placeholder="e.g. Navy Blue"
+              error={colorFormErrors.colorName}
+              required
+            />
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <Input
+                label="Color Code"
+                value={colorForm.colorCode}
+                onChange={(e) => {
+                  let val = e.target.value.trim();
+                  if (val && !val.startsWith("#")) val = "#" + val;
+                  patchColorForm("colorCode", val);
+                }}
+                placeholder="#RRGGBB"
+                error={colorFormErrors.colorCode}
+                required
+                maxLength={7}
+              />
+              <label
+                style={{
+                  position: "relative",
+                  width: 52,
+                  height: 42,
+                  borderRadius: 10,
+                  border: "1px solid var(--rnb-border)",
+                  background: HEX_COLOR_REGEX.test(colorForm.colorCode) ? colorForm.colorCode : "#fff",
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  display: "inline-block",
+                }}
+                title="Pick a color"
+              >
+                <input
+                  type="color"
+                  value={HEX_COLOR_REGEX.test(colorForm.colorCode) ? colorForm.colorCode : "#3b82f6"}
+                  onChange={(e) => patchColorForm("colorCode", e.target.value.toUpperCase())}
+                  style={{
+                    position: "absolute",
+                    inset: -5,
+                    width: "calc(100% + 10px)",
+                    height: "calc(100% + 10px)",
+                    opacity: 0,
+                    cursor: "pointer",
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <label className="field-label" style={{ marginBottom: 0 }}>
+                Color Images
+                <span style={{ color: "var(--rnb-danger)" }}> *</span>
+              </label>
+              {colorForm.images.length > 0 && (
+                <span style={{ fontSize: 12, color: "var(--rnb-muted)" }}>
+                  {colorForm.images.length} image{colorForm.images.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            {colorFormErrors.images && (
+              <div style={{ fontSize: 12, color: "var(--rnb-danger)", marginBottom: 8 }}>
+                {colorFormErrors.images}
+              </div>
+            )}
+            <div
+              className="media-grid"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))" }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const dropped = Array.from(event.dataTransfer.files || []);
+                void handleColorImageFiles(dropped);
+              }}
+            >
+              {colorForm.images.map((img) => (
+                <div key={img.id} className="media-item">
+                  <img src={img.url} alt={img.alt} loading="lazy" />
+                  <button
+                    type="button"
+                    className="media-item__remove"
+                    aria-label="Remove image"
+                    title="Remove image"
+                    onClick={() => removeColorImage(img.id)}
+                  >
+                    <X size={14} />
+                  </button>
+                  <div className="media-item__actions">
+                    <button
+                      type="button"
+                      className="btn btn--sm btn--secondary"
+                      onClick={() => setColorMainImage(img.id)}
+                      title={img.isMain ? "Main image" : "Set as main"}
+                    >
+                      <Star size={12} fill={img.isMain ? "#005afa" : "none"} />
+                    </button>
+                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveColorImage(img.id, -1)} title="Move left">
+                      ←
+                    </button>
+                    <button type="button" className="btn btn--sm btn--secondary" onClick={() => moveColorImage(img.id, 1)} title="Move right">
+                      →
+                    </button>
+                  </div>
+                  {img.isMain ? (
+                    <span className="badge badge--blue" style={{ position: "absolute", top: 6, left: 6, fontSize: 10, height: 20, padding: "0 7px" }}>
+                      Main
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+              <label className={colorUploading ? "media-add media-add--disabled" : "media-add"}>
+                <input
+                  ref={colorImageInputRef}
+                  className="media-add__input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  multiple
+                  disabled={colorUploading}
+                  onChange={(event) => {
+                    const picked = event.currentTarget.files
+                      ? Array.from(event.currentTarget.files)
+                      : [];
+                    event.currentTarget.value = "";
+                    void handleColorImageFiles(picked);
+                  }}
+                />
+                <Upload size={18} />
+                <span style={{ fontSize: 11, fontWeight: 600, textAlign: "center", padding: "0 8px" }}>
+                  {colorUploading ? colorUploadProgress || "Uploading..." : "Upload Images"}
+                </span>
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--rnb-muted)", marginTop: 8, lineHeight: 1.5 }}>
+              First image is the primary image for this color variant. Recommended: 2000 × 2000 px square (1:1 ratio).
+            </div>
+          </div>
+        </div>
+      </Modal>
     </form>
   );
 }

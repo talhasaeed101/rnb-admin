@@ -106,6 +106,7 @@ function normalizeProduct(raw: any): Product {
       width: img.width,
       height: img.height,
       format: img.format,
+      bytes: img.bytes,
     })),
     video: raw.video || null,
     badge: raw.badge ?? null,
@@ -121,6 +122,24 @@ function normalizeProduct(raw: any): Product {
       values: v.values || v.options || [],
     })),
     sizes: raw.sizes || [],
+    colorVariants: (raw.colorVariants || []).map((cv: any, cvIndex: number) => ({
+      id: cv.id || `color-${cvIndex}`,
+      colorName: cv.colorName,
+      colorCode: cv.colorCode,
+      sortOrder: cv.sortOrder ?? cvIndex,
+      images: (cv.images || []).map((img: any, imgIndex: number) => ({
+        id: img.id || img.publicId || `${cv.id || `color-${cvIndex}`}-img-${imgIndex}`,
+        url: img.url,
+        alt: img.alt || `${cv.colorName} image ${imgIndex + 1}`,
+        isMain: img.isMain ?? imgIndex === 0,
+        sortOrder: img.sortOrder ?? imgIndex,
+        publicId: img.publicId,
+        width: img.width,
+        height: img.height,
+        format: img.format,
+        bytes: img.bytes,
+      })),
+    })),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
     ordersCount: raw.ordersCount,
@@ -227,6 +246,20 @@ function productPayload(product: Partial<Product>) {
       options: v.values || [],
     })),
     sizes: product.sizes || [],
+    colorVariants: (product.colorVariants || []).map((cv) => ({
+      id: cv.id,
+      colorName: cv.colorName,
+      colorCode: cv.colorCode,
+      sortOrder: cv.sortOrder,
+      images: (cv.images || []).map((img) => ({
+        url: img.url,
+        publicId: (img as any).publicId || "",
+        width: (img as any).width,
+        height: (img as any).height,
+        format: typeof img.format === "string" ? img.format : undefined,
+        bytes: (img as any).bytes,
+      })),
+    })),
   };
 }
 

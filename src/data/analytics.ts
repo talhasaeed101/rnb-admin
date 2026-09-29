@@ -94,9 +94,9 @@ export function getAnalytics(range: TimeRange): AnalyticsSummary {
 export const defaultStoreSettings = {
   storeName: "RNB Collections",
   storeEmail: "hello@rnbcollections.com",
-  phone: "+1 (555) 014-2200",
-  currency: "USD",
-  timezone: "America/New_York",
+  phone: "+92 (300) 014-2200",
+  currency: "PKR",
+  timezone: "Asia/Karachi",
 };
 
 export const defaultAdminProfile = {

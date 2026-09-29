@@ -26,6 +26,14 @@ export interface ProductImage {
   bytes?: number;
 }
 
+export interface ColorVariant {
+  id: string;
+  colorName: string;
+  colorCode: string;
+  sortOrder: number;
+  images: ProductImage[];
+}
+
 export interface ProductVariation {
   id: string;
   name: string;
@@ -52,6 +60,7 @@ export interface Product {
   status: ProductStatus;
   variations: ProductVariation[];
   sizes: string[];
+  colorVariants: ColorVariant[];
   createdAt: string;
   updatedAt: string;
   ordersCount?: number;

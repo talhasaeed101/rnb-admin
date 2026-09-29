@@ -151,56 +151,54 @@ export async function uploadImages(
     throw error;
   }
 
-  const data: UploadedImage[] = [];
-  const failed: string[] = [];
-  let done = 0;
+  const formData = new FormData();
+  selected.forEach((file) => {
+    formData.append("images", file);
+  });
+
   onProgress?.(0, selected.length);
 
-  for (const file of selected) {
-    try {
-      const formData = new FormData();
-      formData.append("images", file);
-      const res = await apiRequest<{
-        success: true;
-        data: UploadedImage[] | UploadedImage;
-        images?: UploadedImage[];
-        count?: number;
-      }>("/uploads/images", {
-        method: "POST",
-        formData,
-      });
-      const items = uploadedImageList(res);
-      if (!items.length) {
-        failed.push(file.name);
-      } else {
-        data.push(...items);
-      }
-    } catch {
-      failed.push(file.name);
+  try {
+    const res = await apiRequest<{
+      success: true;
+      data: UploadedImage[] | UploadedImage;
+      images?: UploadedImage[];
+      count?: number;
+    }>("/uploads/images", {
+      method: "POST",
+      formData,
+    });
+
+    const data = uploadedImageList(res);
+    onProgress?.(selected.length, selected.length);
+
+    if (!data.length) {
+      const error: ApiError = {
+        message: "Image upload failed. Try smaller JPEG/PNG/WebP files.",
+        status: 400,
+        errors: [],
+      };
+      throw error;
     }
-    done += 1;
-    onProgress?.(done, selected.length);
-  }
 
-  if (!data.length) {
-    const error: ApiError = {
-      message:
-        failed.length === selected.length
-          ? "All image uploads failed. Try smaller JPEG/PNG/WebP files."
-          : "Image upload failed",
-      status: 400,
-      errors: failed,
+    return {
+      success: true as const,
+      data,
+      count: data.length,
+      images: data,
+      failed: [],
     };
-    throw error;
+  } catch (error: any) {
+    onProgress?.(0, selected.length);
+    const errorObj: ApiError = {
+      message:
+        error?.message ||
+        "Image upload failed. Try smaller JPEG/PNG/WebP files (recommended 2000x2000px).",
+      status: error?.status || 400,
+      errors: error?.errors || selected.map((f) => f.name),
+    };
+    throw errorObj;
   }
-
-  return {
-    success: true as const,
-    data,
-    count: data.length,
-    images: data,
-    failed,
-  };
 }
 
 export async function deleteImage(publicId: string) {
