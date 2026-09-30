@@ -131,10 +131,50 @@ export type FailedImage = {
   reason: string;
 };
 
+export type ImageState = "waiting" | "processing" | "uploading" | "done" | "failed";
+
+export type QueuedImage = {
+  id: string;
+  originalName: string;
+  state: ImageState;
+  progressPct: number;
+  uploadedBytes: number;
+  totalBytes: number;
+  error?: string;
+  result?: UploadedImage;
+};
+
+export type UploadProgressListener = (info: {
+  completed: number;
+  total: number;
+  queued: QueuedImage[];
+  uploaded: UploadedImage[];
+  failed: FailedImage[];
+}) => void;
+
 const MAX_IMAGE_DIMENSION = 2000;
 const JPEG_QUALITY = 0.82;
 const WEBP_QUALITY = 0.82;
-const BATCH_SIZE = 2;
+const MAX_CONCURRENT_UPLOADS = 4;
+const PRESIGN_BATCH = 50;
+
+type PresignItemRequest = {
+  fileName: string;
+  contentType: string;
+  size: number;
+  kind?: "image" | "video";
+};
+
+type PresignedUploadItem = {
+  objectKey: string;
+  publicUrl: string;
+  uploadUrl: string;
+  contentType: string;
+  fileName?: string;
+  size: number | null;
+  kind: "image" | "video";
+  expiresIn: number;
+};
 
 function isAnimatedGif(file: File): boolean {
   return file.type === "image/gif";
@@ -155,26 +195,35 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-async function resizeAndCompressImage(file: File): Promise<File> {
+async function resizeAndCompressImage(file: File): Promise<{
+  file: File;
+  width: number | null;
+  height: number | null;
+}> {
+  let naturalW: number | null = null;
+  let naturalH: number | null = null;
+
   if (isAnimatedGif(file)) {
-    return file;
+    return { file, width: null, height: null };
   }
 
   const maxBytes = 20 * 1024 * 1024;
   if (file.size <= maxBytes && file.type === "image/gif") {
-    return file;
+    return { file, width: null, height: null };
   }
 
   let img: HTMLImageElement;
   try {
     img = await loadImage(file);
   } catch {
-    return file;
+    return { file, width: null, height: null };
   }
 
   const objectUrl = img.src;
   try {
     const { naturalWidth, naturalHeight } = img;
+    naturalW = naturalWidth;
+    naturalH = naturalHeight;
 
     let targetWidth = naturalWidth;
     let targetHeight = naturalHeight;
@@ -186,13 +235,15 @@ async function resizeAndCompressImage(file: File): Promise<File> {
       );
       targetWidth = Math.max(1, Math.round(naturalWidth * ratio));
       targetHeight = Math.max(1, Math.round(naturalHeight * ratio));
+      naturalW = targetWidth;
+      naturalH = targetHeight;
     }
 
     const canvas = document.createElement("canvas");
     canvas.width = targetWidth;
     canvas.height = targetHeight;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
+    if (!ctx) return { file, width: naturalW, height: naturalH };
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
@@ -240,76 +291,96 @@ async function resizeAndCompressImage(file: File): Promise<File> {
     });
 
     if (blob.size > file.size && file.size <= maxBytes) {
-      return file;
+      return { file, width: naturalWidth, height: naturalHeight };
     }
 
     const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
     const newName = `${baseName}.${fileExt}`;
-    return new File([blob], newName, { type: outputType, lastModified: Date.now() });
+    const finalFile = new File([blob], newName, { type: outputType, lastModified: Date.now() });
+    return { file: finalFile, width: naturalW, height: naturalH };
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
 }
 
-function uploadedImageList(payload: any): UploadedImage[] {
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (payload?.data && typeof payload.data === "object" && payload.data.url) {
-    return [payload.data];
-  }
-  if (Array.isArray(payload?.images)) return payload.images;
-  if (Array.isArray(payload?.data?.items)) return payload.data.items;
-  if (Array.isArray(payload?.data?.images)) return payload.data.images;
-  return [];
-}
-
-async function uploadSingleBatch(
-  batch: File[],
-): Promise<{ uploaded: UploadedImage[]; failed: FailedImage[] }> {
-  const formData = new FormData();
-  batch.forEach((file) => {
-    formData.append("images", file);
+async function presignBatch(items: PresignItemRequest[]): Promise<PresignedUploadItem[]> {
+  const res = await apiRequest<{
+    success: true;
+    data: PresignedUploadItem[] | PresignedUploadItem;
+    count?: number;
+  }>("/uploads/presign", {
+    method: "POST",
+    body: items,
   });
-
-  try {
-    const res = await apiRequest<{
-      success: true;
-      data: UploadedImage[] | UploadedImage;
-      images?: UploadedImage[];
-      count?: number;
-    }>("/uploads/images", {
-      method: "POST",
-      formData,
-    });
-    const uploaded = uploadedImageList(res);
-    const batchNames = new Set(batch.map((f) => f.name));
-    const uploadedNames = new Set(uploaded.map((u) => u.originalName || ""));
-    const failed: FailedImage[] = batch
-      .filter((f) => !uploadedNames.has(f.name))
-      .map((f) => ({
-        originalName: f.name,
-        reason: "Not returned by server",
-      }))
-      .filter((f) => batchNames.has(f.originalName));
-    return { uploaded, failed };
-  } catch (error: any) {
-    const msg = error?.message || "Upload failed";
-    const failed: FailedImage[] = batch.map((f) => ({
-      originalName: f.name,
-      reason: msg,
-    }));
-    return { uploaded: [], failed };
+  if (Array.isArray(res?.data)) return res.data;
+  if (res?.data && typeof res.data === "object" && (res.data as PresignedUploadItem).uploadUrl) {
+    return [res.data as PresignedUploadItem];
   }
+  throw new Error("Presign response missing uploadUrl entries");
 }
+
+async function uploadDirectToR2(
+  presigned: PresignedUploadItem,
+  blob: Blob,
+  onProgress?: (uploaded: number, total: number) => void,
+): Promise<{ ok: boolean; status: number; eTag?: string }> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", presigned.uploadUrl, true);
+    xhr.setRequestHeader("Content-Type", presigned.contentType || blob.type || "application/octet-stream");
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress?.(event.loaded, event.total);
+      }
+    };
+
+    xhr.onload = () => {
+      const status = xhr.status;
+      const ok = status >= 200 && status < 300;
+      const eTag = xhr.getResponseHeader("ETag") || undefined;
+      resolve({ ok, status, eTag });
+    };
+
+    xhr.onerror = () => {
+      resolve({ ok: false, status: 0 });
+    };
+
+    xhr.onabort = () => {
+      resolve({ ok: false, status: 0 });
+    };
+
+    xhr.ontimeout = () => {
+      resolve({ ok: false, status: 408 });
+    };
+
+    try {
+      xhr.send(blob);
+    } catch {
+      resolve({ ok: false, status: 0 });
+    }
+  });
+}
+
+type QueueEntry = {
+  id: string;
+  originalFile: File;
+  processed:
+    | { status: "pending" }
+    | { status: "ready"; file: File; width: number | null; height: number | null; presigned?: PresignedUploadItem }
+    | { status: "failed"; reason: string };
+};
 
 export async function uploadImages(
   files: File[],
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: UploadProgressListener | ((done: number, total: number) => void),
 ): Promise<{
   success: true;
   data: UploadedImage[];
   count: number;
   images: UploadedImage[];
   failed: FailedImage[];
+  queued: QueuedImage[];
 }> {
   const selected = files.filter((file) => file && file.size > 0);
   if (!selected.length) {
@@ -321,65 +392,230 @@ export async function uploadImages(
     throw error;
   }
 
-  onProgress?.(0, selected.length);
+  const entries: QueueEntry[] = selected.map((f, i) => ({
+    id: `q-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+    originalFile: f,
+    processed: { status: "pending" },
+  }));
 
-  const processed: (File | null)[] = [];
-  const processedFailures: FailedImage[] = [];
+  const queued: QueuedImage[] = entries.map((e) => ({
+    id: e.id,
+    originalName: e.originalFile.name,
+    state: "waiting",
+    progressPct: 0,
+    uploadedBytes: 0,
+    totalBytes: e.originalFile.size,
+  }));
 
-  for (let i = 0; i < selected.length; i++) {
-    const file = selected[i];
+  const emitQueuedProgress = (
+    uploadedCount: number,
+    failedCount: number,
+    results: UploadedImage[],
+    fails: FailedImage[],
+  ) => {
+    if (typeof onProgress !== "function") return;
+    if (onProgress.length === 2) {
+      (onProgress as (done: number, total: number) => void)(
+        uploadedCount + failedCount,
+        selected.length,
+      );
+      return;
+    }
+    (onProgress as UploadProgressListener)({
+      completed: uploadedCount + failedCount,
+      total: selected.length,
+      queued: queued.map((q) => ({ ...q })),
+      uploaded: results,
+      failed: fails,
+    });
+  };
+
+  emitQueuedProgress(0, 0, [], []);
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const q = queued[i];
+    q.state = "processing";
+    emitQueuedProgress(0, 0, [], []);
     try {
-      const resized = await resizeAndCompressImage(file);
-      processed.push(resized);
-    } catch (e: any) {
-      processedFailures.push({
-        originalName: file.name,
-        reason: e?.message || "Failed to process image",
-      });
-      processed.push(null);
+      const res = await resizeAndCompressImage(entry.originalFile);
+      entry.processed = {
+        status: "ready",
+        file: res.file,
+        width: res.width,
+        height: res.height,
+      };
+      q.totalBytes = res.file.size || entry.originalFile.size;
+      q.state = "waiting";
+    } catch (err: any) {
+      entry.processed = {
+        status: "failed",
+        reason: err?.message || "Failed to process image",
+      };
+      q.state = "failed";
+      q.error = entry.processed.reason;
     }
   }
 
-  const validProcessed = processed.filter((f): f is File => f !== null);
+  const readyEntries = entries.filter(
+    (e): e is QueueEntry & { processed: { status: "ready"; file: File; width: number | null; height: number | null } } =>
+      e.processed.status === "ready",
+  );
 
-  let doneSoFar = processedFailures.length;
-  onProgress?.(doneSoFar, selected.length);
+  const presignReqs: PresignItemRequest[] = readyEntries.map((e) => ({
+    fileName: e.processed.file.name,
+    contentType: e.processed.file.type || "image/jpeg",
+    size: e.processed.file.size,
+    kind: "image",
+  }));
 
-  const allUploaded: UploadedImage[] = [];
-  const allFailed: FailedImage[] = [...processedFailures];
+  const presignedMap = new Map<string, PresignedUploadItem>();
 
-  if (validProcessed.length > 0) {
-    for (let i = 0; i < validProcessed.length; i += BATCH_SIZE) {
-      const batch = validProcessed.slice(i, i + BATCH_SIZE);
-      const { uploaded, failed } = await uploadSingleBatch(batch);
-      allUploaded.push(...uploaded);
-      allFailed.push(...failed);
-      doneSoFar += batch.length;
-      onProgress?.(Math.min(doneSoFar, selected.length), selected.length);
+  if (readyEntries.length > 0) {
+    for (let i = 0; i < presignReqs.length; i += PRESIGN_BATCH) {
+      const slice = presignReqs.slice(i, i + PRESIGN_BATCH);
+      try {
+        const signed = await presignBatch(slice);
+        signed.forEach((s, idx) => {
+          const parentIdx = i + idx;
+          const entry = readyEntries[parentIdx];
+          if (!entry) return;
+          entry.processed.presigned = s;
+          presignedMap.set(entry.id, s);
+        });
+      } catch (err: any) {
+        const msg: string = err?.message || "Failed to obtain upload authorization";
+        for (let j = i; j < Math.min(i + PRESIGN_BATCH, presignReqs.length); j++) {
+          const readyEntry = readyEntries[j];
+          if (!readyEntry) continue;
+          const entry = entries.find((ent) => ent.id === readyEntry.id);
+          if (!entry) continue;
+          entry.processed = { status: "failed", reason: msg };
+          const q = queued.find((qq) => qq.id === entry.id);
+          if (q) {
+            q.state = "failed";
+            q.error = msg;
+          }
+        }
+      }
     }
   }
 
-  if (!allUploaded.length && allFailed.length > 0) {
-    const firstReason = allFailed[0]?.reason || "";
+  const allResults: UploadedImage[] = [];
+  const allFails: FailedImage[] = entries
+    .filter((e) => e.processed.status === "failed")
+    .map((e) => ({
+      originalName: e.originalFile.name,
+      reason: (e.processed as { status: "failed"; reason: string }).reason,
+    }));
+
+  let doneUploaded = entries.length - readyEntries.length + allFails.filter((f) => f.originalName && readyEntries.some(r => r.originalFile.name === f.originalName) ? 0 : 0).length;
+  doneUploaded = entries.length - readyEntries.length;
+
+  const uploadQueue = readyEntries.filter((e) => e.processed.presigned);
+  let cursor = 0;
+
+  const runOne = async (): Promise<void> => {
+    while (cursor < uploadQueue.length) {
+      const myIdx = cursor++;
+      const entry = uploadQueue[myIdx];
+      const processed = entry.processed as {
+        status: "ready";
+        file: File;
+        width: number | null;
+        height: number | null;
+        presigned: PresignedUploadItem;
+      };
+      const q = queued.find((qq) => qq.id === entry.id)!;
+      const signed = processed.presigned;
+
+      q.state = "uploading";
+      q.progressPct = 0;
+      emitQueuedProgress(doneUploaded, entries.length, allResults, allFails);
+
+      try {
+        const put = await uploadDirectToR2(
+          signed,
+          processed.file,
+          (uploaded, total) => {
+            q.uploadedBytes = uploaded;
+            q.totalBytes = total || q.totalBytes;
+            q.progressPct = total ? Math.min(100, Math.round((uploaded / total) * 100)) : q.progressPct;
+            emitQueuedProgress(doneUploaded, entries.length, allResults, allFails);
+          },
+        );
+
+        if (put.ok) {
+          const ext = signed.objectKey.split(".").pop()?.toLowerCase() || "";
+          const result: UploadedImage = {
+            url: signed.publicUrl,
+            publicId: signed.objectKey,
+            originalName: entry.originalFile.name,
+            mimeType: signed.contentType,
+            format: ext,
+            bytes: processed.file.size,
+            width: processed.width,
+            height: processed.height,
+            alt: "",
+          };
+          q.state = "done";
+          q.progressPct = 100;
+          q.uploadedBytes = q.totalBytes;
+          q.result = result;
+          allResults.push(result);
+        } else {
+          const reason =
+            put.status === 403
+              ? "Upload authorization expired (403)"
+              : put.status === 0
+                ? "Network error"
+                : put.status === 408
+                  ? "Request timed out"
+                  : `R2 upload failed (HTTP ${put.status})`;
+          q.state = "failed";
+          q.error = reason;
+          allFails.push({ originalName: entry.originalFile.name, reason });
+        }
+      } catch (e: any) {
+        const reason = e?.message || "Upload error";
+        q.state = "failed";
+        q.error = reason;
+        allFails.push({ originalName: entry.originalFile.name, reason });
+      } finally {
+        doneUploaded += 1;
+        emitQueuedProgress(doneUploaded, entries.length, allResults, allFails);
+      }
+    }
+  };
+
+  const workers = Array.from(
+    { length: Math.min(MAX_CONCURRENT_UPLOADS, Math.max(1, uploadQueue.length)) },
+    () => runOne(),
+  );
+  await Promise.all(workers);
+
+  if (!allResults.length && allFails.length > 0) {
+    const firstReason = allFails[0]?.reason || "";
     const error: ApiError = {
       message:
-        allFailed.length === selected.length
-          ? `All ${allFailed.length} image${allFailed.length === 1 ? "" : "s"} failed to upload. ${firstReason ? `First error: ${firstReason}. ` : ""}Try smaller JPEG/PNG/WebP files under 20MB.`
+        allFails.length === selected.length
+          ? `All ${allFails.length} image${allFails.length === 1 ? "" : "s"} failed to upload. ${firstReason ? `First error: ${firstReason}. ` : ""}Check your connection and try again.`
           : firstReason || "Upload failed",
       status: 413,
-      errors: allFailed.map((f) => `${f.originalName}: ${f.reason}`),
+      errors: allFails.map((f) => `${f.originalName}: ${f.reason}`),
     };
     throw error;
   }
 
-  onProgress?.(selected.length, selected.length);
+  emitQueuedProgress(entries.length, entries.length, allResults, allFails);
 
   return {
     success: true as const,
-    data: allUploaded,
-    count: allUploaded.length,
-    images: allUploaded,
-    failed: allFailed,
+    data: allResults,
+    count: allResults.length,
+    images: allResults,
+    failed: allFails,
+    queued,
   };
 }
 
