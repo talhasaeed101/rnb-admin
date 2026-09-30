@@ -59,6 +59,7 @@ interface DataContextValue {
     status: OrderStatus,
     dispatchMeta?: DispatchMeta,
   ) => Promise<Order>;
+  verifyPayment: (id: string) => Promise<Order>;
   addPromoCode: (promo: Omit<PromoCode, "id" | "usageCount"> | PromoCode) => Promise<PromoCode>;
   updatePromoCode: (id: string, patch: Partial<PromoCode>) => Promise<PromoCode>;
   deletePromoCode: (id: string) => Promise<void>;
@@ -470,6 +471,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const verifyPayment = useCallback(async (id: string) => {
+    const res = await apiPatch<{ success: true; data: any }>(
+      `/orders/${id}/verify-payment`,
+      {}
+    );
+    const updated = normalizeOrder(res.data);
+    setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+    return updated;
+  }, []);
+
   const addPromoCode = useCallback(async (promo: any) => {
     const res = await apiPost<{ success: true; data: any }>("/promo-codes", {
       code: promo.code,
@@ -572,6 +583,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       syncCategoryCatalog,
       updateOrder,
       updateOrderStatus,
+      verifyPayment,
       addPromoCode,
       updatePromoCode,
       deletePromoCode,
@@ -603,6 +615,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       syncCategoryCatalog,
       updateOrder,
       updateOrderStatus,
+      verifyPayment,
       addPromoCode,
       updatePromoCode,
       deletePromoCode,

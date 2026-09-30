@@ -24,7 +24,7 @@ const STATUSES: OrderStatus[] = [
 
 export default function OrderDetailPage() {
   const { id } = useParams();
-  const { orders, updateOrderStatus, loading } = useData();
+  const { orders, updateOrderStatus, verifyPayment, loading } = useData();
   const { toast } = useToast();
   const order = orders.find((item) => item.id === id);
 
@@ -60,6 +60,16 @@ export default function OrderDetailPage() {
       toast("Order status updated", "success");
     } catch (err: any) {
       toast(err?.message || "Failed to update order", "error");
+    }
+  }
+
+  async function handleVerifyPayment() {
+    try {
+      await verifyPayment(order!.id);
+      toast("Payment verified successfully", "success");
+      setStatus("Confirmed"); // reflect local state change
+    } catch (err: any) {
+      toast(err?.message || "Failed to verify payment", "error");
     }
   }
 
@@ -143,6 +153,11 @@ export default function OrderDetailPage() {
               <Button onClick={() => void saveStatus()}>
                 {status === "Dispatched" ? "Mark as Dispatched" : "Update Status"}
               </Button>
+              {latest.payment === "Pending" ? (
+                <Button variant="secondary" onClick={() => void handleVerifyPayment()}>
+                  Verify Payment
+                </Button>
+              ) : null}
             </div>
             {latest.courier ? (
               <p style={{ marginTop: 12, fontSize: 13, color: "var(--rnb-muted)" }}>
