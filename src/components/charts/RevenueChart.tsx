@@ -18,6 +18,7 @@ const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1y", label: "1 Year" },
 ];
 
+
 export function RevenueChart({
   data,
   range,
