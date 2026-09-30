@@ -108,6 +108,7 @@ export interface Order {
   customerId: string;
   customerName: string;
   customerEmail: string;
+  customerPhone?: string;
   items: OrderItem[];
   date: string;
   subtotal: number;

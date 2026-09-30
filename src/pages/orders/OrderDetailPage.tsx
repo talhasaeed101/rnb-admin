@@ -173,10 +173,16 @@ export default function OrderDetailPage() {
             <h3>Customer</h3>
             <p><strong>{latest.customerName}</strong></p>
             <p style={{ color: "var(--rnb-muted)" }}>{latest.customerEmail}</p>
+            {latest.customerPhone && (
+              <p style={{ color: "var(--rnb-muted)" }}>{latest.customerPhone}</p>
+            )}
           </div>
           <div className="section-card">
             <h3>Shipping Address</h3>
             <p>{latest.shippingAddress.name}</p>
+            {latest.shippingAddress.phone && (
+              <p style={{ color: "var(--rnb-muted)" }}>{latest.shippingAddress.phone}</p>
+            )}
             <p>{latest.shippingAddress.line1}</p>
             {latest.shippingAddress.line2 ? <p>{latest.shippingAddress.line2}</p> : null}
             <p>

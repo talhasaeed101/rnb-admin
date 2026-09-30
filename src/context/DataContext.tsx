@@ -160,6 +160,7 @@ function normalizeOrder(raw: any): Order {
     customerId: raw.customerId || "",
     customerName: raw.customerName,
     customerEmail: raw.customerEmail,
+    customerPhone: raw.customerPhone || "",
     items: raw.items || [],
     date: raw.date || raw.createdAt,
     subtotal: raw.subtotal,
