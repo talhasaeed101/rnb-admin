@@ -215,7 +215,15 @@ export function ProductForm({
       });
       const failedCount = res.failed?.length || 0;
       if (failedCount) {
-        toast(`${uploaded.length} uploaded, ${failedCount} failed`, "error");
+        const preview = (res.failed || [])
+          .slice(0, 2)
+          .map((f: any) => `${f.originalName}: ${f.reason || "unknown"}`)
+          .join("; ");
+        const suffix = (res.failed?.length || 0) > 2 ? `; +${(res.failed?.length || 0) - 2} more` : "";
+        toast(
+          `${uploaded.length} uploaded, ${failedCount} failed — ${preview}${suffix}`,
+          "error",
+        );
       } else {
         toast(
           uploaded.length === 1
@@ -426,7 +434,15 @@ export function ProductForm({
       });
       const failedCount = res.failed?.length || 0;
       if (failedCount) {
-        toast(`${uploaded.length} uploaded, ${failedCount} failed`, "error");
+        const preview = (res.failed || [])
+          .slice(0, 2)
+          .map((f: any) => `${f.originalName}: ${f.reason || "unknown"}`)
+          .join("; ");
+        const suffix = (res.failed?.length || 0) > 2 ? `; +${(res.failed?.length || 0) - 2} more` : "";
+        toast(
+          `${uploaded.length} uploaded, ${failedCount} failed — ${preview}${suffix}`,
+          "error",
+        );
       } else {
         toast(
           uploaded.length === 1
